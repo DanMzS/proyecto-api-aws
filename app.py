@@ -1,7 +1,35 @@
+import json
 from flask import Flask, request, jsonify
 from validators import validar_alumno, validar_profesor
 from errors import register_error_handlers, NotFoundError, ValidationError
 from storage import alumnos, profesores, next_alumno_id, next_profesor_id
+
+def get_json_or_empty():
+    # 1) Intento normal
+    data = request.get_json(silent=True)
+    if isinstance(data, dict):
+        return data
+
+    # 2) Fallback: leer bytes crudos y parsear como UTF-8 (JSON estándar)
+    raw_bytes = request.get_data(cache=False)  # <-- bytes, no texto
+    if raw_bytes:
+        try:
+            return json.loads(raw_bytes)  # json.loads acepta bytes (asume UTF-8)
+        except Exception:
+            # Último intento: decodificar explícitamente y reintentar
+            try:
+                return json.loads(raw_bytes.decode('utf-8'))
+            except Exception:
+                pass
+
+    # 3) Fallback para formularios con 'json='
+    if request.form and 'json' in request.form:
+        try:
+            return json.loads(request.form['json'])
+        except Exception:
+            pass
+
+    return {}
 
 app = Flask(__name__)
 register_error_handlers(app)
@@ -20,7 +48,7 @@ def get_alumno(item_id: int):
 
 @app.post('/alumnos')
 def create_alumno():
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_or_empty()
     ok, errs = validar_alumno(payload)
     if not ok:
         raise ValidationError(errs)
@@ -36,7 +64,7 @@ def create_alumno():
 
 @app.put('/alumnos/<int:item_id>')
 def update_alumno(item_id: int):
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_or_empty()
     ok, errs = validar_alumno(payload)
     if not ok:
         raise ValidationError(errs)
@@ -75,7 +103,7 @@ def get_profesor(item_id: int):
 
 @app.post('/profesores')
 def create_profesor():
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_or_empty()
     ok, errs = validar_profesor(payload)
     if not ok:
         raise ValidationError(errs)
@@ -91,7 +119,7 @@ def create_profesor():
 
 @app.put('/profesores/<int:item_id>')
 def update_profesor(item_id: int):
-    payload = request.get_json(silent=True) or {}
+    payload = get_json_or_empty()
     ok, errs = validar_profesor(payload)
     if not ok:
         raise ValidationError(errs)
@@ -114,6 +142,16 @@ def delete_profesor(item_id: int):
             profesores.pop(idx)
             return jsonify({"deleted": True}), 200
     raise NotFoundError()
+
+@app.post('/_echo')
+def echo():
+    return jsonify({
+        "is_json": request.is_json,
+        "json": request.get_json(silent=True),
+        "raw": request.get_data(cache=False, as_text=True),
+        "headers": {k: v for k, v in request.headers.items()}
+    }), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
