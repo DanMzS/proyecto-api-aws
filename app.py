@@ -2,7 +2,7 @@ import json
 from flask import Flask, request, jsonify
 from validators import validar_alumno, validar_profesor
 from errors import register_error_handlers, NotFoundError, ValidationError
-from storage import alumnos, profesores, next_alumno_id, next_profesor_id
+from storage import alumnos, profesores, set_alumno_id, set_profesor_id
 
 def get_json_or_empty():
     # 1) Intento normal
@@ -49,11 +49,32 @@ def get_alumno(item_id: int):
 @app.post('/alumnos')
 def create_alumno():
     payload = get_json_or_empty()
+    
+    # Si viene con 'id' en el payload, usarlo; si no, generar uno nuevo
+    alumno_id = None
+    if 'id' in payload:
+        try:
+            alumno_id = int(payload['id'])
+        except (ValueError, TypeError):
+            pass
+    
     ok, errs = validar_alumno(payload)
     if not ok:
         raise ValidationError(errs)
+    
+    # Si no hay ID, generar uno basado en la matrícula para hacerlo más único
+    if alumno_id is None:
+        # Usar un hash simple de la matrícula para generar un ID único
+        matricula_str = str(payload['matricula'])
+        alumno_id = abs(hash(matricula_str)) % 1000000
+        # Si ya existe, buscar uno libre
+        while any(a['id'] == alumno_id for a in alumnos):
+            alumno_id = (alumno_id + 1) % 1000000
+    
+    set_alumno_id(alumno_id)
+    
     alumno_creado = {
-        'id': next_alumno_id(),
+        'id': alumno_id,
         'nombres': payload['nombres'].strip(),
         'apellidos': payload['apellidos'].strip(),
         'matricula': payload['matricula'].strip(),
@@ -104,11 +125,30 @@ def get_profesor(item_id: int):
 @app.post('/profesores')
 def create_profesor():
     payload = get_json_or_empty()
+    
+    # Si viene con 'id' en el payload, usarlo
+    profesor_id = None
+    if 'id' in payload:
+        try:
+            profesor_id = int(payload['id'])
+        except (ValueError, TypeError):
+            pass
+    
     ok, errs = validar_profesor(payload)
     if not ok:
         raise ValidationError(errs)
+    
+    # Si no hay ID, generar uno basado en el numeroEmpleado
+    if profesor_id is None:
+        num_emp_str = str(payload['numeroEmpleado'])
+        profesor_id = abs(hash(num_emp_str)) % 1000000
+        while any(p['id'] == profesor_id for p in profesores):
+            profesor_id = (profesor_id + 1) % 1000000
+    
+    set_profesor_id(profesor_id)
+    
     profesor_creado = {
-        'id': next_profesor_id(),
+        'id': profesor_id,
         'numeroEmpleado': payload['numeroEmpleado'].strip(),
         'nombres': payload['nombres'].strip(),
         'apellidos': payload['apellidos'].strip(),
@@ -152,6 +192,10 @@ def echo():
         "headers": {k: v for k, v in request.headers.items()}
     }), 200
 
+# Manejador para rutas no encontradas (404 en lugar de 500)
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Recurso no encontrado"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
