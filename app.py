@@ -110,6 +110,11 @@ def delete_alumno(item_id: int):
             return jsonify({"deleted": True}), 200
     raise NotFoundError()
 
+@app.delete('/alumnos')
+def delete_alumnos_without_id():
+    # DELETE sin ID debe retornar 404
+    raise NotFoundError()
+
 # Profesores
 @app.get('/profesores')
 def list_profesores():
@@ -181,6 +186,11 @@ def delete_profesor(item_id: int):
         if p['id'] == item_id:
             profesores.pop(idx)
             return jsonify({"deleted": True}), 200
+    raise NotFoundError()
+
+@app.delete('/profesores')
+def delete_profesores_without_id():
+    # DELETE sin ID debe retornar 404
     raise NotFoundError()
 
 @app.post('/_echo')
